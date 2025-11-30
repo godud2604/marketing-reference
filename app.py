@@ -4,7 +4,6 @@ import numpy as np
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-
 # 외부 라이브러리
 from st_click_detector import click_detector
 from moviepy.editor import (
@@ -350,27 +349,20 @@ def _wrap_title(draw, title_text, font, max_width):
 def create_text_overlay(title, lines, highlight_idx, **kwargs):
     cfg = kwargs
     
-    # ==========================================
-    # 1. 디자인 상수 설정 (답답함 해소를 위한 조정)
-    # ==========================================
     W, H = VIDEO_WIDTH, VIDEO_HEIGHT
     
-    # 폰트 사이즈 약간 축소 (공간 확보)
     TITLE_SIZE = int(cfg['title_size'] * 0.85)
     BODY_SIZE = int(cfg['body_size'] * 0.85)
     
-    # 여백 및 간격 설정 (상단 배치)
     MARGIN_X = 60
     top_padding = int(cfg.get('top_padding', 190))
     TITLE_BOTTOM_MARGIN = 36
     DIVIDER_MARGIN = 60
     LINE_HEIGHT_RATIO = 1.9
     
-    # 색상 변환
     c_title = hex_to_rgba(cfg['colors']['title'])
     c_body = hex_to_rgba(cfg['colors']['body'])
     
-    # 폰트 로드
     f_title = load_font(cfg['title_font_path'], TITLE_SIZE)
     f_body = load_font(cfg['body_font_path'], BODY_SIZE)
     try:
@@ -378,16 +370,12 @@ def create_text_overlay(title, lines, highlight_idx, **kwargs):
     except:
         f_body_bold = f_body
 
-    # ==========================================
-    # 2. 캔버스 및 배경 준비
-    # ==========================================
     bg_img = kwargs.get('bg_img')
     if bg_img is None:
          base = Image.new("RGBA", (W, H), (0,0,0,0))
     else:
          base = bg_img.copy().convert("RGBA")
 
-    # 전체 배경 위에만 살짝 어둡게(카드 제거)
     if cfg.get("overlay_darkness", 0) > 0:
         alpha = max(0, min(220, int(cfg["overlay_darkness"])))
         dimmer = Image.new("RGBA", (W, H), (0, 0, 0, alpha))
@@ -395,27 +383,10 @@ def create_text_overlay(title, lines, highlight_idx, **kwargs):
 
     draw = ImageDraw.Draw(base)
 
-    # ==========================================
-    # 4. 텍스트 레이아웃 계산
-    # ==========================================
     content_width = W - (MARGIN_X * 2)
     wrapped_title = _wrap_title(draw, title, f_title, content_width)
     
-    total_content_height = 0
-    title_height = len(wrapped_title) * (TITLE_SIZE * 1.3)
-    total_content_height += title_height + TITLE_BOTTOM_MARGIN
-    total_content_height += 2 + DIVIDER_MARGIN
-    
-    body_line_height = BODY_SIZE * LINE_HEIGHT_RATIO
-    body_height = len(lines) * body_line_height
-    total_content_height += body_height
-
-    # 상단 여백 위주로 배치
     start_y = top_padding
-
-    # ==========================================
-    # 5. 실제 그리기
-    # ==========================================
     cursor_y = start_y
     text_start_x = MARGIN_X
 
@@ -426,9 +397,8 @@ def create_text_overlay(title, lines, highlight_idx, **kwargs):
         cursor_y += TITLE_SIZE * 1.3
     
     cursor_y += TITLE_BOTTOM_MARGIN
-
-    # [구분선]
     cursor_y += (4 + DIVIDER_MARGIN)
+    body_line_height = int(BODY_SIZE * LINE_HEIGHT_RATIO)
 
     # [본문]
     for i, line in enumerate(lines):
@@ -494,8 +464,9 @@ with st.expander("🤖 AI에게 대본 요청하기 (프롬프트 복사)", expa
 지금 바로 캡처해서 저장하세요!"""
     
     st.code(prompt_text, language="text")
+
 # ----------------------------------------------------
-# SECTION 1: 내용 입력
+# SECTION 1: 내용 입력 (항상 표시)
 # ----------------------------------------------------
 st.markdown('<div class="section-header"><span>✍️</span> 내용 입력</div>', unsafe_allow_html=True)
 
@@ -507,146 +478,155 @@ body_text = st.text_area("본문 (한 줄씩 작성해주세요, 줄바꿈 필�
 )
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ----------------------------------------------------
-# SECTION 2: 배경 선택
-# ----------------------------------------------------
-@st.fragment 
-def render_background_section():
-    st.markdown('<div class="section-header"><span>🖼</span> 배경 선택</div>', unsafe_allow_html=True)
-    
-    if "selected_default_video" not in st.session_state and DEFAULT_VIDEOS:
-        st.session_state["selected_default_video"] = DEFAULT_VIDEOS[0]
 
-    bg_mode = st.radio("배경 소스", ["기본 동영상", "직접 업로드"], horizontal=True, label_visibility="collapsed", disabled=IS_GEN)
-    
-    if bg_mode == "기본 동영상":
-        if DEFAULT_VIDEOS:
-            curr_path = st.session_state["selected_default_video"]["video_path"]
-            
-            html_content = '<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">'
-            for idx, video in enumerate(DEFAULT_VIDEOS):
-                b64 = _get_thumb_b64(video["thumbnail"])
-                is_sel = (video["video_path"] == curr_path)
-                border = "4px solid #8E2DE2" if is_sel else "1px solid #f0f0f0"
-                opacity = "1.0" if is_sel else "0.8"
-                
-                html_content += f"""
-                <a href='javascript:void(0);' id='{idx}' style='text-decoration: none;'>
-                    <div style="
-                        width: 85px; height: 125px;
-                        background: url('data:image/jpeg;base64,{b64}') center/cover;
-                        border-radius: 12px; border: {border}; opacity: {opacity};
-                        margin-bottom: 5px;
-                        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-                    "></div>
-                </a>"""
-            html_content += "</div>"
-            
-            clicked = None if IS_GEN else click_detector(html_content)
-            
-            if clicked:
-                new_vid = DEFAULT_VIDEOS[int(clicked)]
-                if st.session_state["selected_default_video"] != new_vid:
-                    st.session_state["selected_default_video"] = new_vid
-                    st.rerun() 
-        else:
-            st.info("video 폴더에 영상이 없습니다.")
-    else:
-        st.file_uploader("이미지/영상 업로드", type=["jpg", "png", "mp4"], key="uploaded_bg_file", disabled=IS_GEN)
+# =========================================================================
+# (중요) 화면에서 요소를 숨기기 위해 빈 컨테이너(Placeholder) 3개를 미리 생성
+# =========================================================================
+bg_container = st.empty()     # 배경 선택 UI용
+style_container = st.empty()  # 스타일 및 음악 설정 UI용
+btn_container = st.empty()    # 생성 버튼 UI용
+
+# ----------------------------------------------------
+# SECTION 2: 배경 선택 (bg_container 안에 렌더링)
+# ----------------------------------------------------
+with bg_container.container():
+    @st.fragment 
+    def render_background_section():
+        st.markdown('<div class="section-header"><span>🖼</span> 배경 선택</div>', unsafe_allow_html=True)
         
-    st.markdown('</div>', unsafe_allow_html=True)
+        if "selected_default_video" not in st.session_state and DEFAULT_VIDEOS:
+            st.session_state["selected_default_video"] = DEFAULT_VIDEOS[0]
 
-render_background_section()
+        bg_mode = st.radio("배경 소스", ["기본 동영상", "직접 업로드"], horizontal=True, label_visibility="collapsed", disabled=IS_GEN)
+        
+        if bg_mode == "기본 동영상":
+            if DEFAULT_VIDEOS:
+                curr_path = st.session_state["selected_default_video"]["video_path"]
+                
+                html_content = '<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">'
+                for idx, video in enumerate(DEFAULT_VIDEOS):
+                    b64 = _get_thumb_b64(video["thumbnail"])
+                    is_sel = (video["video_path"] == curr_path)
+                    border = "4px solid #8E2DE2" if is_sel else "1px solid #f0f0f0"
+                    opacity = "1.0" if is_sel else "0.8"
+                    
+                    html_content += f"""
+                    <a href='javascript:void(0);' id='{idx}' style='text-decoration: none;'>
+                        <div style="
+                            width: 85px; height: 125px;
+                            background: url('data:image/jpeg;base64,{b64}') center/cover;
+                            border-radius: 12px; border: {border}; opacity: {opacity};
+                            margin-bottom: 5px;
+                            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+                        "></div>
+                    </a>"""
+                html_content += "</div>"
+                
+                clicked = None if IS_GEN else click_detector(html_content)
+                
+                if clicked:
+                    new_vid = DEFAULT_VIDEOS[int(clicked)]
+                    if st.session_state["selected_default_video"] != new_vid:
+                        st.session_state["selected_default_video"] = new_vid
+                        st.rerun() 
+            else:
+                st.info("video 폴더에 영상이 없습니다.")
+        else:
+            st.file_uploader("이미지/영상 업로드", type=["jpg", "png", "mp4"], key="uploaded_bg_file", disabled=IS_GEN)
+            
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    render_background_section()
 
 # ----------------------------------------------------
-# SECTION 3: 음악 및 스타일
+# SECTION 3: 음악 및 스타일 (style_container 안에 렌더링)
 # ----------------------------------------------------
-with st.expander("🎨 스타일 & 음악 설정 (클릭하여 펼치기)", expanded=True):
-    if st.session_state.get("is_generating"):
-        st.info("영상 제작 중입니다. 스타일/음악 변경사항은 현재 제작에 반영되지 않으며, 다음 제작부터 적용됩니다.")
+with style_container.container():
+    with st.expander("🎨 스타일 & 음악 설정 (클릭하여 펼치기)", expanded=True):
+        if st.session_state.get("is_generating"):
+            st.info("영상 제작 중입니다. 다음 제작부터 변경사항이 적용됩니다.")
 
-    st.markdown('<span class="sub-label">🎵 배경 음악 설정</span>', unsafe_allow_html=True)
-    
-    col_m1, col_m2 = st.columns([7, 3])
-    with col_m1:
-        music_mode = st.selectbox("배경 음악 선택", ["기본 음악", "직접 업로드", "사용 안함"], disabled=IS_GEN)
-    with col_m2:
-        music_vol = st.slider("배경 음량", 0.0, 1.0, 0.3, disabled=IS_GEN)
+        st.markdown('<span class="sub-label">🎵 배경 음악 설정</span>', unsafe_allow_html=True)
+        
+        col_m1, col_m2 = st.columns([7, 3])
+        with col_m1:
+            music_mode = st.selectbox("배경 음악 선택", ["기본 음악", "직접 업로드", "사용 안함"], disabled=IS_GEN)
+        with col_m2:
+            music_vol = st.slider("배경 음량", 0.0, 1.0, 0.3, disabled=IS_GEN)
 
-    if music_mode == "직접 업로드":
-        music_file = st.file_uploader("MP3 파일", type=["mp3"], disabled=IS_GEN)
-    else:
-        music_file = None
+        if music_mode == "직접 업로드":
+            music_file = st.file_uploader("MP3 파일", type=["mp3"], disabled=IS_GEN)
+        else:
+            music_file = None
 
-    st.markdown('<div class="styled-hr"></div>', unsafe_allow_html=True)
-    
-    st.markdown('<span class="sub-label">✏️ 폰트 및 색상</span>', unsafe_allow_html=True)
-    col_s1, col_s2 = st.columns(2)
-    with col_s1:
-        t_font = st.selectbox("제목 폰트", list(AVAILABLE_FONTS.keys()), index=0, disabled=IS_GEN)
-        c_title = st.color_picker("제목 색상", "#FFD600", disabled=IS_GEN)
-        t_size = st.slider("제목 크기", 50, 200, 130, disabled=IS_GEN)
-    with col_s2:
-        b_font = st.selectbox("본문 폰트", list(AVAILABLE_FONTS.keys()), index=1, disabled=IS_GEN)
-        c_body = st.color_picker("본문 색상", "#FFFFFF", disabled=IS_GEN)
-        b_size = st.slider("본문 크기", 30, 150, 65, disabled=IS_GEN)
+        st.markdown('<div class="styled-hr"></div>', unsafe_allow_html=True)
+        
+        st.markdown('<span class="sub-label">✏️ 폰트 및 색상</span>', unsafe_allow_html=True)
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            t_font = st.selectbox("제목 폰트", list(AVAILABLE_FONTS.keys()), index=0, disabled=IS_GEN)
+            c_title = st.color_picker("제목 색상", "#FFD600", disabled=IS_GEN)
+            t_size = st.slider("제목 크기", 50, 200, 130, disabled=IS_GEN)
+        with col_s2:
+            b_font = st.selectbox("본문 폰트", list(AVAILABLE_FONTS.keys()), index=1, disabled=IS_GEN)
+            c_body = st.color_picker("본문 색상", "#FFFFFF", disabled=IS_GEN)
+            b_size = st.slider("본문 크기", 30, 150, 65, disabled=IS_GEN)
 
-    # 폰트 미리보기
-    st.markdown('<span class="sub-label">👀 폰트 미리보기</span>', unsafe_allow_html=True)
-    prev_col1, prev_col2 = st.columns(2)
-    with prev_col1:
-        st.image(
-            make_font_preview(AVAILABLE_FONTS[t_font], "제목 미리보기", int(t_size * 0.7), c_title),
-            caption=f"{t_font} (제목)",
-            use_container_width=True,
-        )
-    with prev_col2:
-        st.image(
-            make_font_preview(AVAILABLE_FONTS[b_font], "본문 미리보기", int(b_size * 0.7), c_body),
-            caption=f"{b_font} (본문)",
-            use_container_width=True,
-        )
+        # 폰트 미리보기
+        st.markdown('<span class="sub-label">👀 폰트 미리보기</span>', unsafe_allow_html=True)
+        prev_col1, prev_col2 = st.columns(2)
+        with prev_col1:
+            st.image(
+                make_font_preview(AVAILABLE_FONTS[t_font], "제목 미리보기", int(t_size * 0.7), c_title),
+                caption=f"{t_font} (제목)",
+                use_container_width=True,
+            )
+        with prev_col2:
+            st.image(
+                make_font_preview(AVAILABLE_FONTS[b_font], "본문 미리보기", int(b_size * 0.7), c_body),
+                caption=f"{b_font} (본문)",
+                use_container_width=True,
+            )
 
-    st.markdown('<div class="styled-hr"></div>', unsafe_allow_html=True)
-    
-    st.markdown('<span class="sub-label">✨ 배경 효과</span>', unsafe_allow_html=True)
-    dark_val = st.slider("배경 어둡기", 0, 200, 90, disabled=IS_GEN)
-    top_padding = st.slider("텍스트 상단 여백", 20, 500, 190, disabled=IS_GEN)
+        st.markdown('<div class="styled-hr"></div>', unsafe_allow_html=True)
+        
+        st.markdown('<span class="sub-label">✨ 배경 효과</span>', unsafe_allow_html=True)
+        dark_val = st.slider("배경 어둡기", 0, 200, 90, disabled=IS_GEN)
+        top_padding = st.slider("텍스트 상단 여백", 20, 500, 190, disabled=IS_GEN)
 
-    # 현재 선택값을 공통으로 사용하는 스타일 옵션
-    style_opt = {
-        "title_font_path": AVAILABLE_FONTS[t_font],
-        "body_font_path": AVAILABLE_FONTS[b_font],
-        "brand_font_path": AVAILABLE_FONTS[t_font],
-        "title_size": t_size, 
-        "body_size": b_size, 
-        "colors": {"title": c_title, "body": c_body},
-        "overlay_darkness": dark_val,
-        "top_padding": top_padding,
-    }
+        # 현재 선택값을 공통으로 사용하는 스타일 옵션
+        style_opt = {
+            "title_font_path": AVAILABLE_FONTS[t_font],
+            "body_font_path": AVAILABLE_FONTS[b_font],
+            "brand_font_path": AVAILABLE_FONTS[t_font],
+            "title_size": t_size, 
+            "body_size": b_size, 
+            "colors": {"title": c_title, "body": c_body},
+            "overlay_darkness": dark_val,
+            "top_padding": top_padding,
+        }
 
-    st.markdown('<div class="styled-hr"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="styled-hr"></div>', unsafe_allow_html=True)
 
-    st.markdown('<span class="sub-label">🎞️ 영상 미리보기 (첫 장면)</span>', unsafe_allow_html=True)
-    preview_btn = st.button("👀 영상 미리보기", use_container_width=True, disabled=IS_GEN)
-    if preview_btn:
-        try:
-            uploaded_bg = st.session_state.get("uploaded_bg_file")
-            sel_vid = st.session_state.get("selected_default_video", DEFAULT_VIDEOS[0] if DEFAULT_VIDEOS else None)
-            default_video_path = sel_vid["video_path"] if sel_vid else None
-            preview_img = make_video_preview_image(title_text, body_text, style_opt, uploaded_bg=uploaded_bg, default_video=default_video_path)
-            st.image(preview_img, caption="영상 미리보기 (첫 장면)", use_container_width=True)
-        except Exception as e:
-            st.error(f"미리보기 생성 중 오류: {str(e)}")
+        st.markdown('<span class="sub-label">🎞️ 영상 미리보기 (첫 장면)</span>', unsafe_allow_html=True)
+        preview_btn = st.button("👀 영상 미리보기", use_container_width=True, disabled=IS_GEN)
+        if preview_btn:
+            try:
+                uploaded_bg = st.session_state.get("uploaded_bg_file")
+                sel_vid = st.session_state.get("selected_default_video", DEFAULT_VIDEOS[0] if DEFAULT_VIDEOS else None)
+                default_video_path = sel_vid["video_path"] if sel_vid else None
+                preview_img = make_video_preview_image(title_text, body_text, style_opt, uploaded_bg=uploaded_bg, default_video=default_video_path)
+                st.image(preview_img, caption="영상 미리보기 (첫 장면)", use_container_width=True)
+            except Exception as e:
+                st.error(f"미리보기 생성 중 오류: {str(e)}")
 
-# ==========================================
-# 5. 생성 로직 및 버튼 
-# ==========================================
-
+# ----------------------------------------------------
+# SECTION 5: 생성 버튼 (btn_container 안에 렌더링)
+# ----------------------------------------------------
 # ▼ 본인의 쿠팡 파트너스 링크를 입력하세요
 COUPANG_LINK = "https://www.coupang.com" 
 
-# 버튼 스타일 (Streamlit Primary 버튼과 똑같이 생겼지만, 링크 기능이 포함됨)
+# 버튼 스타일
 btn_css = """
 <style>
     .generate-btn {
@@ -686,7 +666,6 @@ btn_css = """
 </style>
 """
 
-# HTML 버튼 구성 (target='_blank'로 새 창 열기)
 btn_state_class = "disabled" if IS_GEN else ""
 btn_html = f"""
 {btn_css}
@@ -700,10 +679,12 @@ btn_html = f"""
 </div>
 """
 
-# 클릭 감지 실행
-clicked_id = None if IS_GEN else click_detector(btn_html)
+with btn_container.container():
+    clicked_id = None if IS_GEN else click_detector(btn_html)
 
-# 버튼이 클릭되었을 때 실행되는 로직
+# ==========================================
+# 실행 로직 (버튼 클릭 시 처리)
+# ==========================================
 if clicked_id == "start_gen_btn":
     
     # 1. 빈 값 체크
@@ -712,6 +693,11 @@ if clicked_id == "start_gen_btn":
     elif not body_text.strip():
         st.error("내용을 입력해주세요!")
     else:
+        # [핵심] 진행 중이므로 설정창과 버튼 숨기기
+        bg_container.empty()
+        style_container.empty()
+        btn_container.empty()
+
         # 2. 영상 생성 시작
         st.session_state["is_generating"] = True
         st.session_state["locked_style_music"] = {
