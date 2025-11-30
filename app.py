@@ -1,6 +1,11 @@
+import base64
 import os
 import numpy as np
 import streamlit as st
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+# 외부 라이브러리
+from st_click_detector import click_detector
 from moviepy.editor import (
     AudioFileClip,
     ImageClip,
@@ -9,122 +14,230 @@ from moviepy.editor import (
     concatenate_videoclips,
     vfx,
 )
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
-# Pillow 10 compatibility
+# Pillow 패치 (최신 버전 호환성)
 if not hasattr(Image, "ANTIALIAS"):
     Image.ANTIALIAS = Image.Resampling.LANCZOS
 
 # ==========================================
-# 1. 설정 및 초기화
+# 1. 초기 설정 및 CSS
 # ==========================================
-st.set_page_config(page_title="30초 인생사 메이커", layout="wide")
+st.set_page_config(page_title="Shorts Maker", layout="centered", page_icon="📱")
 
-# 경로/폰트 설정 (프로젝트 루트 기준)
+def apply_custom_style():
+    st.markdown("""
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        html, body, [class*="css"] {
+            font-family: 'Pretendard', sans-serif;
+        }
+        
+        .block-container {
+            max-width: 500px !important;
+            padding-top: 2rem !important;
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+            padding-bottom: 5rem !important;
+            margin: 0 auto !important;
+        }
+                
+        .element-container, div[data-testid="stElementContainer"] {
+            width: 100% !important;
+            min-width: 100% !important;
+        }
+        
+        /* 헤더 스타일 */
+        .main-header {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 10px;
+        }
+        .main-header h1 {
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: #333;
+            margin: 0;
+        }
+
+        /* 토글(Expander) 디자인 */
+        div[data-testid="stExpander"] {
+            background-color: white;
+            border-radius: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            border: 1px solid #f0f0f0;
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+        div[data-testid="stExpander"] > details > summary {
+            font-weight: 700;
+            font-size: 1.05rem;
+            color: #333;
+            padding: 18px 20px;
+            border-bottom: 1px solid #f8f8f8;
+        }
+        div[data-testid="stExpander"] > details > div {
+            padding: 20px 20px 28px 20px;
+        }
+
+        /* 구분선 UI */
+        .styled-hr {
+            border: 0;
+            height: 1px;
+            background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0));
+            margin: 25px 0;
+        }
+
+        /* 섹션 제목 */
+        .section-header {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: #333;
+            display: flex;
+            align-items: center;
+        }
+        .section-header span {
+            margin-right: 8px;
+            font-size: 1.2rem;
+        }
+        
+        /* 소제목 라벨 스타일 */
+        .sub-label {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #444;
+            margin-bottom: 12px;
+            display: block;
+        }
+        
+        /* 버튼 스타일 통합 (생성 버튼 + 다운로드 버튼) */
+        div.stButton, div.stDownloadButton {
+            width: 100% !important;
+            padding: 0 !important;
+            margin-top: 20px !important;
+        }
+        
+        div.stButton > button, div.stDownloadButton > button {
+            width: 100% !important;
+            display: block !important;
+            border-radius: 16px;
+            height: 58px;
+            background: linear-gradient(135deg, #4A00E0 0%, #8E2DE2 100%) !important;
+            color: white !important;
+            font-weight: 700;
+            font-size: 1.15rem;
+            border: none !important;
+            box-shadow: 0 6px 15px rgba(74, 0, 224, 0.25) !important;
+            transition: all 0.2s ease-in-out;
+        }
+        div.stButton > button:hover, div.stDownloadButton > button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(74, 0, 224, 0.35) !important;
+            color: white !important;
+        }
+        div.stButton > button:active, div.stDownloadButton > button:active {
+            transform: scale(0.98);
+            color: white !important;
+            background: linear-gradient(135deg, #4A00E0 0%, #8E2DE2 100%) !important;
+        }
+        div.stDownloadButton > button:focus {
+             box-shadow: 0 8px 20px rgba(74, 0, 224, 0.35) !important;
+             color: white !important;
+        }
+
+        /* 입력창 디자인 */
+        .stTextInput > div > div > input, .stTextArea > div > div > textarea {
+            background-color: #f9f9f9;
+            border-radius: 12px;
+            border: 1px solid #eee;
+            color: #333;
+            padding: 12px;
+        }
+        .stTextInput > div > div > input:focus, .stTextArea > div > div > textarea:focus {
+            background-color: #fff;
+            border-color: #8E2DE2;
+            box-shadow: 0 0 0 1px #8E2DE2;
+        }
+        
+        /* 코드 블록 스타일 (프롬프트 복사용) */
+        .stCode {
+            border-radius: 10px;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+apply_custom_style()
+
+# 경로 설정
 ROOT_DIR = os.path.abspath(os.path.dirname(__file__))
 FONT_DIR = os.path.join(ROOT_DIR, "fonts")
-FONT_BOLD = os.path.join(FONT_DIR, "GmarketSansTTFBold.ttf")
-FONT_MEDIUM = os.path.join(FONT_DIR, "GmarketSansTTFMedium.ttf")
-FOOTER_BRAND = "명언 메이커"
-VIDEO_WIDTH = 1080
-VIDEO_HEIGHT = 1920
-DEFAULT_LINE_DURATION = 2.5
-DEFAULT_MUSIC = os.path.join(os.path.dirname(__file__), "music", "just-relax-11157.mp3")
-
-VIDEO_DIR = os.path.join(os.path.dirname(__file__), "video")
+VIDEO_DIR = os.path.join(ROOT_DIR, "video")
 THUMB_DIR = os.path.join("temp", "thumbs")
+DEFAULT_MUSIC = os.path.join(ROOT_DIR, "music", "just-relax-11157.mp3")
+
+os.makedirs("temp", exist_ok=True)
+os.makedirs(THUMB_DIR, exist_ok=True)
+
+# 상수
+VIDEO_WIDTH, VIDEO_HEIGHT = 1080, 1920
+DEFAULT_LINE_DURATION = 2.5
 
 AVAILABLE_FONTS = {
     "Gmarket Sans Bold": os.path.join(FONT_DIR, "GmarketSansTTFBold.ttf"),
     "Gmarket Sans Medium": os.path.join(FONT_DIR, "GmarketSansTTFMedium.ttf"),
-    "Noto Sans KR Regular": os.path.join(FONT_DIR, "NotoSansKR-Regular.ttf"),
     "Noto Sans KR Bold": os.path.join(FONT_DIR, "NotoSansKR-Bold.ttf"),
     "SCDream 5": os.path.join(FONT_DIR, "SCDream5.otf"),
-    "SCDream 6": os.path.join(FONT_DIR, "SCDream6.otf"),
     "Binggrae Bold": os.path.join(FONT_DIR, "BinggraeII-Bold.ttf"),
 }
 
-# 임시 폴더 생성
-os.makedirs("temp", exist_ok=True)
-os.makedirs(THUMB_DIR, exist_ok=True)
-
-
+# ==========================================
+# 2. 유틸리티 함수
+# ==========================================
 def _build_default_videos():
-    """기본 영상 목록을 생성하고 썸네일을 준비"""
-    default_videos = []
-    if not os.path.exists(VIDEO_DIR):
-        return default_videos
-
-    for filename in sorted(os.listdir(VIDEO_DIR)):
-        if not filename.lower().endswith((".mp4", ".mov", ".mkv", ".avi", ".webm")):
-            continue
-
-        video_path = os.path.join(VIDEO_DIR, filename)
-        if not os.path.isfile(video_path):
-            continue
-
-        thumb_path = os.path.join(THUMB_DIR, f"{os.path.splitext(filename)[0]}.jpg")
-        if not os.path.exists(thumb_path):
-            try:
-                with VideoFileClip(video_path) as clip:
-                    capture_time = min(1.0, clip.duration / 2) if clip.duration else 0
-                    clip.save_frame(thumb_path, t=capture_time)
-            except Exception:
-                continue
-
-        default_videos.append(
-            {
-                "label": filename,
-                "video_path": video_path,
-                "thumbnail": thumb_path,
-            }
-        )
-    return default_videos
-
+    if not os.path.exists(VIDEO_DIR): return []
+    videos = []
+    for f in sorted(os.listdir(VIDEO_DIR)):
+        if f.lower().endswith((".mp4", ".mov")):
+            v_path = os.path.join(VIDEO_DIR, f)
+            t_path = os.path.join(THUMB_DIR, f"{os.path.splitext(f)[0]}.jpg")
+            if not os.path.exists(t_path):
+                try:
+                    with VideoFileClip(v_path) as clip:
+                        clip.save_frame(t_path, t=min(1.0, clip.duration/2))
+                except: continue
+            videos.append({"label": f, "video_path": v_path, "thumbnail": t_path})
+    return videos
 
 DEFAULT_VIDEOS = _build_default_videos()
 
+@st.cache_data
+def _get_thumb_b64(path):
+    try:
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except: return ""
 
-def _load_video_background(video_path):
-    """영상 배경을 리사이즈/크롭해서 반환"""
-    clip = VideoFileClip(video_path)
+def hex_to_rgba(hex_color, alpha=255):
+    h = hex_color.lstrip("#")
+    if len(h) != 6: return (255, 255, 255, alpha)
+    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4)) + (alpha,)
+
+def load_font(path, size):
+    try: return ImageFont.truetype(path, size)
+    except: return ImageFont.load_default()
+
+def _load_video_background(path):
+    clip = VideoFileClip(path)
     resized = clip.resize(height=VIDEO_HEIGHT)
     if resized.w < VIDEO_WIDTH:
         resized = resized.resize(width=VIDEO_WIDTH)
-    cropped = resized.crop(x_center=resized.w / 2, y_center=resized.h / 2, width=VIDEO_WIDTH, height=VIDEO_HEIGHT)
-    return cropped
-
-# ==========================================
-# 2. 기능 함수 (AI 제거, 로직 단순화)
-# ==========================================
-
-def hex_to_rgba(hex_color, alpha=255):
-    """#RRGGBB 형태를 RGBA 튜플로 변환"""
-    hex_color = hex_color.lstrip("#")
-    if len(hex_color) != 6:
-        return (255, 255, 255, alpha)
-    r = int(hex_color[0:2], 16)
-    g = int(hex_color[2:4], 16)
-    b = int(hex_color[4:6], 16)
-    return (r, g, b, alpha)
-
-
-def load_font(path, size, fallback):
-    """폰트를 안전하게 로드"""
-    try:
-        return ImageFont.truetype(path, size)
-    except Exception:
-        return fallback
+    return resized.crop(x_center=resized.w/2, y_center=resized.h/2, width=VIDEO_WIDTH, height=VIDEO_HEIGHT)
 
 def _wrap_title(draw, title_text, font, max_width):
-    """메인 스크립트와 동일하게 제목을 줄바꿈 (공백 단위, 없으면 글자 단위)"""
     lines = []
-
     if " " in title_text:
         words = title_text.split()
-        if not words:
-            words = [title_text]
-
+        if not words: words = [title_text]
         current_line = []
         for word in words:
             test_tokens = current_line + [word]
@@ -135,8 +248,7 @@ def _wrap_title(draw, title_text, font, max_width):
             else:
                 lines.append(current_line)
                 current_line = [word]
-        if current_line:
-            lines.append(current_line)
+        if current_line: lines.append(current_line)
     else:
         chars = list(title_text)
         current_line = []
@@ -149,565 +261,330 @@ def _wrap_title(draw, title_text, font, max_width):
             else:
                 lines.append(current_line)
                 current_line = [ch]
-        if current_line:
-            lines.append(current_line)
-
-    # 2줄까지만 사용
+        if current_line: lines.append(current_line)
     if len(lines) > 2:
         all_tokens = [token for line in lines for token in line]
         mid = len(all_tokens) // 2
         lines = [all_tokens[:mid], all_tokens[mid:]]
-
     return lines
 
-
-def create_text_overlay(
-    title,
-    lines,
-    highlight_idx,
-    *,
-    title_font_path,
-    body_font_path,
-    brand_font_path,
-    title_size=160,
-    body_size=60,
-    colors=None,
-    video_size=(VIDEO_WIDTH, VIDEO_HEIGHT),
-    overlay_darkness=140,
-    overlay_blur=0,
-    brand_text=FOOTER_BRAND,
-):
-    """영상 위에 깔 투명 텍스트 레이어 생성"""
-    colors = colors or {}
-    title_color = hex_to_rgba(colors.get("title", "#FFD600"))
-    body_color = hex_to_rgba(colors.get("body", "#FFFFFF"))
-    brand_color = hex_to_rgba(colors.get("brand", "#FF9800"))
-    stroke_fill = (0, 0, 0, 255)
-    title_stroke = max(3, title_size // 25)
-    body_stroke = max(2, body_size // 25)
-
-    base = Image.new("RGBA", video_size, (0, 0, 0, 0))
-    if overlay_darkness > 0:
-        dark = Image.new("RGBA", video_size, (0, 0, 0, int(overlay_darkness)))
+# ==========================================
+# 3. 이미지 생성 로직
+# ==========================================
+def create_text_overlay(title, lines, highlight_idx, **kwargs):
+    cfg = kwargs
+    base = Image.new("RGBA", (VIDEO_WIDTH, VIDEO_HEIGHT), (0,0,0,0))
+    
+    if cfg['overlay_darkness'] > 0:
+        dark = Image.new("RGBA", (VIDEO_WIDTH, VIDEO_HEIGHT), (0, 0, 0, int(cfg['overlay_darkness'])))
         base = Image.alpha_composite(base, dark)
-    if overlay_blur and overlay_blur > 0:
-        # Blur only the background overlay; text stays sharp.
-        base = base.filter(ImageFilter.GaussianBlur(overlay_blur))
 
     draw = ImageDraw.Draw(base)
-    font_title = load_font(title_font_path, title_size if highlight_idx != -1 else int(title_size * 1.2), ImageFont.load_default())
-    font_body = load_font(body_font_path, body_size, ImageFont.load_default())
-    font_brand = load_font(brand_font_path, max(int(body_size * 1.4), 80), ImageFont.load_default())
+    
+    title_size = cfg['title_size']
+    body_size = cfg['body_size']
+    
+    f_title = load_font(cfg['title_font_path'], title_size)
+    f_body = load_font(cfg['body_font_path'], body_size)
+    
+    c_title = hex_to_rgba(cfg['colors']['title'])
+    c_body = hex_to_rgba(cfg['colors']['body'])
+    stroke_fill = (0,0,0,255)
+    t_stroke = max(3, title_size // 25)
+    b_stroke = max(2, body_size // 25)
 
-    brand_x = video_size[0] / 2
-    max_title_width = int(video_size[0] * 0.85)
-    title_lines = _wrap_title(draw, title, font_title, max_title_width)
-
-    if highlight_idx == -1:
-        line_height = int(font_title.size * 1.25)
-        total_lines = len(title_lines)
-        title_block_height = total_lines * line_height
-        title_block_top_y = (video_size[1] / 2) - (title_block_height / 2)
-        title_start_y = title_block_top_y + (line_height / 2)
-
-        if brand_text:
-            brand_y_intro = title_block_top_y - 200
-            draw.text(
-                (brand_x, brand_y_intro),
-                brand_text,
-                font=font_brand,
-                fill=brand_color,
-                anchor="mm",
-                stroke_width=body_stroke,
-                stroke_fill=stroke_fill,
-            )
-
-        for i, tokens in enumerate(title_lines):
-            text_y = title_start_y + (i * line_height)
-            full_text = (" " if " " in title else "").join(tokens)
-            draw.text(
-                (video_size[0] / 2, text_y),
-                full_text,
-                font=font_title,
-                fill=title_color,
-                anchor="mm",
-                stroke_width=title_stroke,
-                stroke_fill=stroke_fill,
-            )
-        return base
-
+    max_title_width = int(VIDEO_WIDTH * 0.85)
+    title_lines = _wrap_title(draw, title, f_title, max_title_width)
+    
+    # 상단 제목 (고정)
     title_y = 240
-    line_height = int(font_title.size * 1.15)
-    last_title_bottom = title_y
+    line_height = int(f_title.size * 1.15)
+    last_bottom = title_y
     for i, tokens in enumerate(title_lines):
-        text_y = title_y + (i * line_height)
         full_text = (" " if " " in title else "").join(tokens)
-        title_bbox = draw.textbbox(
-            (video_size[0] / 2, text_y),
-            full_text,
-            font=font_title,
-            anchor="mm",
-            stroke_width=title_stroke,
-        )
-        last_title_bottom = title_bbox[3]
-        draw.text(
-            (video_size[0] / 2, text_y),
-            full_text,
-            font=font_title,
-            fill=title_color,
-            anchor="mm",
-            stroke_width=title_stroke,
-            stroke_fill=stroke_fill,
-        )
-
-    if brand_text:
-        brand_y_play = video_size[1] - 120
-        draw.text(
-            (brand_x, brand_y_play),
-            brand_text,
-            font=font_brand,
-            fill=brand_color,
-            anchor="mm",
-            stroke_width=body_stroke,
-            stroke_fill=stroke_fill,
-        )
-
+        ty = title_y + (i * line_height)
+        draw.text((VIDEO_WIDTH/2, ty), full_text, font=f_title, fill=c_title, anchor="mm", stroke_width=t_stroke, stroke_fill=stroke_fill)
+        last_bottom = ty + (line_height/2) 
+    
+    # 본문 목록
     margin_left = 60
     line_spacing = int(body_size * 1.7)
-    body_start_y = last_title_bottom + 60
-    current_y = body_start_y
+    curr_y = last_bottom + 100
+    
     for i, line in enumerate(lines):
-        text_color = body_color
-        stroke_w = max(1, body_stroke - 1)
-        stroke_c = stroke_fill
-
-        number = f"{i+1}."
-        num_bbox = draw.textbbox((margin_left, current_y), number, font=font_body, anchor="lt", stroke_width=stroke_w)
-        draw.text(
-            (margin_left, current_y),
-            number,
-            font=font_body,
-            fill=text_color,
-            anchor="lt",
-            stroke_width=stroke_w,
-            stroke_fill=stroke_c,
-        )
-
-        max_width = video_size[0] - num_bbox[2] - 80
+        color = c_body
+        num_str = f"{i+1}."
+        
+        num_bbox = draw.textbbox((margin_left, curr_y), num_str, font=f_body, anchor="lt", stroke_width=b_stroke)
+        draw.text((margin_left, curr_y), num_str, font=f_body, fill=color, anchor="lt", stroke_width=b_stroke, stroke_fill=stroke_fill)
+        
+        max_w = VIDEO_WIDTH - num_bbox[2] - 80
         text_lines = []
-        current_line = ""
+        curr_line = ""
         for ch in line:
-            test_line = current_line + ch
-            test_bbox = draw.textbbox((0, 0), test_line, font=font_body)
-            if test_bbox[2] - test_bbox[0] <= max_width:
-                current_line = test_line
+            test_line = curr_line + ch
+            if draw.textbbox((0,0), test_line, font=f_body)[2] <= max_w:
+                curr_line = test_line
             else:
-                if current_line:
-                    text_lines.append(current_line)
-                current_line = ch
-        if current_line:
-            text_lines.append(current_line)
-
-        text_y = current_y
-        for line_text in text_lines:
-            draw.text(
-                (num_bbox[2] + 20, text_y),
-                line_text,
-                font=font_body,
-                fill=text_color,
-                anchor="lt",
-                stroke_width=stroke_w,
-                stroke_fill=stroke_c,
-            )
-            text_y += 80
-
-        current_y += line_spacing if len(text_lines) == 1 else line_spacing + int(0.8 * line_height) * (len(text_lines) - 1)
+                if curr_line: text_lines.append(curr_line)
+                curr_line = ch
+        if curr_line: text_lines.append(curr_line)
+        
+        ty = curr_y
+        for tl in text_lines:
+            draw.text((num_bbox[2] + 20, ty), tl, font=f_body, fill=color, anchor="lt", stroke_width=b_stroke, stroke_fill=stroke_fill)
+            ty += 80
+        
+        curr_y += line_spacing + (len(text_lines)-1)*80
 
     return base
 
-
-def create_text_image(
-    base_img_path,
-    title,
-    lines,
-    highlight_idx,
-    *,
-    title_font_path,
-    body_font_path,
-    brand_font_path,
-    title_size=160,
-    body_size=60,
-    colors=None,
-    video_size=(VIDEO_WIDTH, VIDEO_HEIGHT),
-    overlay_blur=5,
-    overlay_darkness=140,
-    brand_text=FOOTER_BRAND,
-):
-    """이미지 위에 텍스트 합성 (main.py 렌더링 레이아웃과 유사하게 정렬)"""
-    colors = colors or {}
-    title_color = hex_to_rgba(colors.get("title", "#FFD600"))
-    body_color = hex_to_rgba(colors.get("body", "#FFFFFF"))
-    brand_color = hex_to_rgba(colors.get("brand", "#FF9800"))
-    stroke_fill = (0, 0, 0, 255)
-    title_stroke = max(3, title_size // 25)
-    body_stroke = max(2, body_size // 25)
-
-    try:
-        base = Image.open(base_img_path).convert("RGBA")
-        base = ImageOps.fit(base, video_size, Image.Resampling.LANCZOS)
-        
-        # 어두운 오버레이
-        overlay = Image.new("RGBA", base.size, (0, 0, 0, int(overlay_darkness)))
-        base = Image.alpha_composite(base, overlay)
-        if overlay_blur > 0:
-            base = base.filter(ImageFilter.GaussianBlur(overlay_blur))
-        
-        draw = ImageDraw.Draw(base)
-        # 폰트 로드 (없으면 기본 폰트)
-        font_title = load_font(title_font_path, title_size if highlight_idx != -1 else int(title_size * 1.2), ImageFont.load_default())
-        font_body = load_font(body_font_path, body_size, ImageFont.load_default())
-        font_brand = load_font(brand_font_path, max(int(body_size * 1.4), 80), ImageFont.load_default())
-
-        draw = ImageDraw.Draw(base)
-
-        # 브랜드 텍스트
-        brand_x = video_size[0] / 2
-
-        # 제목 줄바꿈
-        max_title_width = int(video_size[0] * 0.85)
-        title_lines = _wrap_title(draw, title, font_title, max_title_width)
-
-        # 인트로(-1): 제목만 중앙에, 본문 숨김
-        if highlight_idx == -1:
-            line_height = int(font_title.size * 1.25)
-            total_lines = len(title_lines)
-            title_block_height = total_lines * line_height
-            title_block_top_y = (video_size[1] / 2) - (title_block_height / 2)
-            title_start_y = title_block_top_y + (line_height / 2)
-
-            if brand_text:
-                brand_y_intro = title_block_top_y - 200
-                draw.text(
-                    (brand_x, brand_y_intro),
-                    brand_text,
-                    font=font_brand,
-                    fill=brand_color,
-                    anchor="mm",
-                    stroke_width=body_stroke,
-                    stroke_fill=stroke_fill,
-                )
-
-            for i, tokens in enumerate(title_lines):
-                text_y = title_start_y + (i * line_height)
-                full_text = (" " if " " in title else "").join(tokens)
-                draw.text(
-                    (video_size[0] / 2, text_y),
-                    full_text,
-                    font=font_title,
-                    fill=title_color,
-                    anchor="mm",
-                    stroke_width=title_stroke,
-                    stroke_fill=stroke_fill,
-                )
-            return base
-
-        # 재생 구간 제목 (상단)
-        title_y = 240
-        line_height = int(font_title.size * 1.15)
-        last_title_bottom = title_y
-        for i, tokens in enumerate(title_lines):
-            text_y = title_y + (i * line_height)
-            full_text = (" " if " " in title else "").join(tokens)
-            title_bbox = draw.textbbox(
-                (video_size[0] / 2, text_y),
-                full_text,
-                font=font_title,
-                anchor="mm",
-                stroke_width=title_stroke,
-            )
-            last_title_bottom = title_bbox[3]
-            draw.text(
-                (video_size[0] / 2, text_y),
-                full_text,
-                font=font_title,
-                fill=title_color,
-                anchor="mm",
-                stroke_width=title_stroke,
-                stroke_fill=stroke_fill,
-            )
-
-        # 브랜드 하단
-        if brand_text:
-            brand_y_play = video_size[1] - 120
-            draw.text(
-                (brand_x, brand_y_play),
-                brand_text,
-                font=font_brand,
-                fill=brand_color,
-                anchor="mm",
-                stroke_width=body_stroke,
-                stroke_fill=stroke_fill,
-            )
-
-        # 본문
-        margin_left = 60
-        line_spacing = int(body_size * 1.7)
-        body_start_y = last_title_bottom + 60
-        current_y = body_start_y
-        for i, line in enumerate(lines):
-            text_color = body_color
-            stroke_w = max(1, body_stroke - 1)
-            stroke_c = stroke_fill
-
-            number = f"{i+1}."
-            num_bbox = draw.textbbox((margin_left, current_y), number, font=font_body, anchor="lt", stroke_width=stroke_w)
-            draw.text(
-                (margin_left, current_y),
-                number,
-                font=font_body,
-                fill=text_color,
-                anchor="lt",
-                stroke_width=stroke_w,
-                stroke_fill=stroke_c,
-            )
-
-            max_width = video_size[0] - num_bbox[2] - 80
-            text_lines = []
-            current_line = ""
-            for ch in line:
-                test_line = current_line + ch
-                test_bbox = draw.textbbox((0, 0), test_line, font=font_body)
-                if test_bbox[2] - test_bbox[0] <= max_width:
-                    current_line = test_line
-                else:
-                    if current_line:
-                        text_lines.append(current_line)
-                    current_line = ch
-            if current_line:
-                text_lines.append(current_line)
-
-            text_y = current_y
-            for line_text in text_lines:
-                draw.text(
-                    (num_bbox[2] + 20, text_y),
-                    line_text,
-                    font=font_body,
-                    fill=text_color,
-                    anchor="lt",
-                    stroke_width=stroke_w,
-                    stroke_fill=stroke_c,
-                )
-                text_y += 80
-
-            current_y += line_spacing if len(text_lines) == 1 else line_spacing + int(0.8 * line_height) * (len(text_lines) - 1)
-
-        return base
-    except Exception as e:
-        st.error(f"이미지 처리 오류: {e}")
-        return None
-
 # ==========================================
-# 3. Streamlit UI
+# 메인 UI 구성
 # ==========================================
-st.title("🎬 명언 영상 생성기")
-st.markdown("디폴트 배경/음악으로도 바로 시작할 수 있어요. 옵션을 조절해 나만의 명언 영상을 만들어보세요.")
 
-# 사이드바: 설정
-with st.sidebar:
-    st.header("🔧 설정")
-    bg_mode = st.radio("배경 선택", ["기본 영상", "직접 이미지 업로드"], index=0)
-    selected_video = None
-    uploaded_bg = None
-    if bg_mode == "기본 영상":
+st.markdown("""
+<div class="main-header">
+    <h1>🎬 Shorts Maker</h1>
+</div>
+""", unsafe_allow_html=True)
+
+# ----------------------------------------------------
+# SECTION 0: AI 프롬프트 도우미 (내용 입력 바로 위)
+# ----------------------------------------------------
+with st.expander("🤖 AI에게 대본 요청하기 (프롬프트 복사)", expanded=True):
+    st.markdown("""
+    <div style="color: #555; font-size: 0.9rem; margin-bottom: 10px;">
+        ChatGPT나 Gemini 등에게 아래 내용을 복사해서 물어보세요.<br>
+        <b>제목 1개</b>와 <b>본문 8줄(마지막 CTA 포함)</b>을 완벽하게 뽑아줍니다.
+        <br>(우측 상단 📄 아이콘을 누르면 복사됩니다)
+    </div>
+    """, unsafe_allow_html=True)
+    
+    prompt_text = """# 역할 부여
+당신은 사람들의 감성을 자극하고 통찰을 주는 '인스타그램 릴스/숏폼 기획자'입니다.
+
+# 입력 데이터
+주제: [여기에 주제를 입력하세요. 예: 무기력증을 이겨내는 법]
+
+# 작업 지시
+위 주제를 바탕으로 숏폼 영상 텍스트를 작성해 주세요. 아래 규칙을 엄격히 준수하세요.
+
+1. 썸네일 제목
+   - 1초 만에 시선을 끄는 "후킹(Hooking)" 멘트 (15자 이내)
+   - 의문형이나 강한 단정형 사용
+
+2. 본문 (8줄 고정)
+   - 번호 매기기(1., -) 금지, 오직 텍스트만 출력
+   - 1~7줄: "~하는 것", "~하기" 등 간결한 명사형 어미로 끝낼 것 (운율감 형성)
+   - 8번째 줄: "지금 바로 저장하고 잊지 마세요!" 등 강력한 행동 유도(CTA)
+
+# 출력 예시
+제목: 당신이 지금 불행한 이유
+본문:
+남의 시선을 너무 의식하는 것
+건강을 미리 챙기지 않은 것
+(중략)
+지금 바로 캡처해서 저장하세요!"""
+    
+    st.code(prompt_text, language="text")
+# ----------------------------------------------------
+# SECTION 1: 내용 입력
+# ----------------------------------------------------
+st.markdown('<div class="section-header"><span>✍️</span> 내용 입력</div>', unsafe_allow_html=True)
+
+title_text = st.text_input("제목 (상단 고정)", "왜 자꾸 인간관계가 힘들까")
+body_text = st.text_area("본문 (한 줄에 한 화면)", 
+    "내가 책임지려는 마음 내려놓기\n거절을 미안해하지 않기\n상대의 기분까지 관리하지 않기\n말하지 않아도 알겠지 기대하지 않기\n감정소모 큰 사람과 거리 두기\n내 시간을 남에게 잠식되지 않게 하기\n내가 먼저 나를 챙기기\n지금 바로 저장하고 잊지 마세요!",
+    height=200
+)
+st.markdown('</div>', unsafe_allow_html=True)
+
+# ----------------------------------------------------
+# SECTION 2: 배경 선택
+# ----------------------------------------------------
+@st.fragment 
+def render_background_section():
+    st.markdown('<div class="section-header"><span>🖼</span> 배경 선택</div>', unsafe_allow_html=True)
+    
+    if "selected_default_video" not in st.session_state and DEFAULT_VIDEOS:
+        st.session_state["selected_default_video"] = DEFAULT_VIDEOS[0]
+
+    bg_mode = st.radio("배경 소스", ["기본 갤러리", "직접 업로드"], horizontal=True, label_visibility="collapsed")
+    
+    if bg_mode == "기본 갤러리":
         if DEFAULT_VIDEOS:
-            if "selected_default_video" not in st.session_state:
-                st.session_state["selected_default_video"] = DEFAULT_VIDEOS[0]
-
-            st.markdown("썸네일을 눌러 기본 영상을 고르세요.")
-            video_cols = st.columns(4)
+            curr_path = st.session_state["selected_default_video"]["video_path"]
+            
+            html_content = '<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">'
             for idx, video in enumerate(DEFAULT_VIDEOS):
-                col = video_cols[idx % 4]
-                with col:
-                    st.image(video["thumbnail"], caption=video["label"], use_container_width=True)
-                    if st.button("이 영상 사용", key=f"video_select_{idx}"):
-                        st.session_state["selected_default_video"] = video
-                    if st.session_state.get("selected_default_video", {}).get("video_path") == video["video_path"]:
-                        st.caption("현재 선택됨")
-            selected_video = st.session_state.get("selected_default_video")
+                b64 = _get_thumb_b64(video["thumbnail"])
+                is_sel = (video["video_path"] == curr_path)
+                border = "4px solid #8E2DE2" if is_sel else "1px solid #f0f0f0"
+                opacity = "1.0" if is_sel else "0.8"
+                
+                html_content += f"""
+                <a href='javascript:void(0);' id='{idx}' style='text-decoration: none;'>
+                    <div style="
+                        width: 85px; height: 125px;
+                        background: url('data:image/jpeg;base64,{b64}') center/cover;
+                        border-radius: 12px; border: {border}; opacity: {opacity};
+                        margin-bottom: 5px;
+                        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+                    "></div>
+                </a>"""
+            html_content += "</div>"
+            
+            clicked = click_detector(html_content)
+            
+            if clicked:
+                new_vid = DEFAULT_VIDEOS[int(clicked)]
+                if st.session_state["selected_default_video"] != new_vid:
+                    st.session_state["selected_default_video"] = new_vid
+                    st.rerun() 
         else:
-            st.warning("기본 영상이 없습니다. 이미지 업로드를 이용해주세요.")
-    elif bg_mode == "직접 이미지 업로드":
-        uploaded_bg = st.file_uploader("이미지 업로드", type=["png", "jpg", "jpeg"])
-
-    st.markdown("---")
-    music_mode = st.radio(
-        "배경 음악",
-        ["기본 음악 사용", "직접 업로드", "음악 없음"],
-        index=0 if os.path.exists(DEFAULT_MUSIC) else 2,
-    )
-    music_file = None
-    if music_mode == "직접 업로드":
-        music_file = st.file_uploader("MP3 업로드", type=["mp3"])
-    music_volume = st.slider("배경 음악 볼륨", 0.1, 1.0, 0.3, 0.05, disabled=music_mode == "음악 없음")
-
-    st.markdown("---")
-    st.subheader("스타일")
-    title_font = st.selectbox("제목 폰트", list(AVAILABLE_FONTS.keys()), index=0)
-    body_font = st.selectbox("본문 폰트", list(AVAILABLE_FONTS.keys()), index=1)
-    title_size = st.slider("제목 글자 크기", 100, 240, 140, 2)
-    body_size = st.slider("본문 글자 크기", 40, 120, 62, 2)
-    title_color = st.color_picker("제목 색상", "#FFD600")
-    body_color = st.color_picker("본문 기본 색상", "#FFFFFF")
-    brand_color = st.color_picker("브랜드 포인트 색상", "#FF9800")
-    overlay_blur = st.slider("배경 흐림 정도", 0, 15, 5)
-    overlay_darkness = st.slider("배경 어둡게 (0=없음, 255=완전암)", 0, 200, 140, 5)
-    show_brand = st.checkbox("하단 브랜드 표시", value=True)
-    brand_text = st.text_input("하단 브랜드 텍스트", FOOTER_BRAND, disabled=not show_brand)
-
-# 메인: 내용 입력
-silent_line_duration = DEFAULT_LINE_DURATION
-col1, col2 = st.columns(2)
-with col1:
-    title = st.text_input("제목 (썸네일 문구)", "인생에서 후회하는 3가지")
-with col2:
-    lines_input = st.text_area("본문 내용 (한 줄에 하나씩)", "남의 시선을 너무 의식하지 말 것\n건강을 미리 챙기지 않은 것\n사랑하는 사람에게 표현하지 않은 것", height=180)
-
-# 생성 버튼
-if st.button("🎥 영상 생성 시작", type="primary"):
-    if not lines_input.strip():
-        st.error("본문 내용을 입력해주세요!")
+            st.info("video 폴더에 영상이 없습니다.")
     else:
-        status = st.empty()
-        progress = st.progress(0)
+        st.file_uploader("이미지/영상 업로드", type=["jpg", "png", "mp4"], key="uploaded_bg_file")
+        
+    st.markdown('</div>', unsafe_allow_html=True)
 
-        bg_path = None
-        bg_video_path = None
-        status.info("1️⃣ 배경 준비 중...")
-        progress.progress(5)
+render_background_section()
 
-        # 배경 이미지 결정
-        if bg_mode == "기본 영상" and selected_video:
-            bg_video_path = selected_video["video_path"]
-        elif bg_mode == "직접 이미지 업로드" and uploaded_bg:
-            upload_ext = uploaded_bg.name.split(".")[-1]
-            bg_path = os.path.join("temp", f"uploaded_bg.{upload_ext}")
-            with open(bg_path, "wb") as f:
-                f.write(uploaded_bg.getbuffer())
+# ----------------------------------------------------
+# SECTION 3: 음악 및 스타일
+# ----------------------------------------------------
+with st.expander("🎨 스타일 & 음악 설정 (클릭하여 펼치기)", expanded=False):
+    st.markdown('<span class="sub-label">🎵 배경 음악 설정</span>', unsafe_allow_html=True)
+    
+    col_m1, col_m2 = st.columns([7, 3])
+    with col_m1:
+        music_mode = st.selectbox("배경 음악 선택", ["기본 음악", "직접 업로드", "사용 안함"])
+    with col_m2:
+        music_vol = st.slider("배경 음량", 0.0, 1.0, 0.3)
 
-        if not bg_video_path and not bg_path and DEFAULT_VIDEOS:
-            status.warning("선택한 영상이 없어 기본 영상을 사용합니다.")
-            bg_video_path = DEFAULT_VIDEOS[0]["video_path"]
+    if music_mode == "직접 업로드":
+        music_file = st.file_uploader("MP3 파일", type=["mp3"])
+    else:
+        music_file = None
 
-        if not bg_path and not bg_video_path:
-            st.error("사용할 수 있는 배경을 찾지 못했습니다.")
-            progress.empty()
-        else:
-            try:
-                lines = [line.strip() for line in lines_input.split("\n") if line.strip()]
-                if not lines:
-                    st.error("본문 내용을 한 줄 이상 입력해주세요.")
-                    progress.empty()
+    st.markdown('<div class="styled-hr"></div>', unsafe_allow_html=True)
+    
+    st.markdown('<span class="sub-label">✏️ 폰트 및 색상</span>', unsafe_allow_html=True)
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        t_font = st.selectbox("제목 폰트", list(AVAILABLE_FONTS.keys()), index=0)
+        c_title = st.color_picker("제목 색상", "#FFD600")
+        t_size = st.slider("제목 크기", 50, 200, 130)
+    with col_s2:
+        b_font = st.selectbox("본문 폰트", list(AVAILABLE_FONTS.keys()), index=1)
+        c_body = st.color_picker("본문 색상", "#FFFFFF")
+        b_size = st.slider("본문 크기", 30, 150, 65)
+
+    st.markdown('<div class="styled-hr"></div>', unsafe_allow_html=True)
+    
+    st.markdown('<span class="sub-label">✨ 배경 효과</span>', unsafe_allow_html=True)
+    dark_val = st.slider("배경 어둡기", 0, 200, 90)
+
+# ==========================================
+# 5. 생성 로직 및 버튼
+# ==========================================
+create_button = st.button("✨ 영상 생성하기", type="primary")
+
+if create_button:
+    if not body_text.strip():
+        st.error("내용을 입력해주세요!")
+    else:
+        progress_text = "🎬 작업 시작..."
+        my_bar = st.progress(0, text=progress_text)
+        
+        try:
+            lines = [x.strip() for x in body_text.split('\n') if x.strip()]
+            
+            bg_clip = None
+            bg_img_path = None
+            
+            uploaded_bg = st.session_state.get("uploaded_bg_file")
+            
+            if uploaded_bg:
+                ext = uploaded_bg.name.split('.')[-1].lower()
+                temp_bg = os.path.join("temp", f"upload_bg.{ext}")
+                with open(temp_bg, "wb") as f: f.write(uploaded_bg.getbuffer())
+                
+                if ext in ['mp4', 'mov', 'avi']:
+                    bg_clip = _load_video_background(temp_bg)
                 else:
-                    clips = []
+                    bg_img_path = temp_bg 
+            elif DEFAULT_VIDEOS:
+                sel_vid = st.session_state.get("selected_default_video", DEFAULT_VIDEOS[0])
+                bg_clip = _load_video_background(sel_vid['video_path'])
 
-                    style_options = {
-                        "title_font_path": AVAILABLE_FONTS[title_font],
-                        "body_font_path": AVAILABLE_FONTS[body_font],
-                        "brand_font_path": AVAILABLE_FONTS[title_font],
-                        "title_size": title_size,
-                        "body_size": body_size,
-                        "overlay_blur": overlay_blur,
-                        "overlay_darkness": overlay_darkness,
-                        "colors": {
-                            "title": title_color,
-                            "body": body_color,
-                            "brand": brand_color,
-                        },
-                        "brand_text": brand_text if show_brand else "",
-                    }
+            if not bg_clip and not bg_img_path:
+                if DEFAULT_VIDEOS:
+                     bg_clip = _load_video_background(DEFAULT_VIDEOS[0]['video_path'])
+                else:
+                    raise Exception("배경을 선택해주세요.")
 
-                    video_base_clip = None
-                    if bg_video_path:
-                        try:
-                            video_base_clip = _load_video_background(bg_video_path)
-                        except Exception as e:
-                            st.error(f"배경 영상을 불러오는 중 오류가 발생했습니다: {e}")
-                            progress.empty()
-                            st.stop()
+            style_opt = {
+                "title_font_path": AVAILABLE_FONTS[t_font],
+                "body_font_path": AVAILABLE_FONTS[b_font],
+                "brand_font_path": AVAILABLE_FONTS[t_font],
+                "title_size": t_size, 
+                "body_size": b_size, 
+                "colors": {"title": c_title, "body": c_body},
+                "overlay_darkness": dark_val,
+            }
 
-                    status.info("2️⃣ 오디오 및 장면 생성 중...")
-                    progress.progress(20)
+            clips = []
+            total_steps = len(lines) + 2 
+            
+            for i, line in enumerate(lines):
+                percent = int((i / total_steps) * 100)
+                my_bar.progress(percent, text=f"🎞️ 장면 {i+1} 생성 중...")
+                
+                txt_img = create_text_overlay(title_text, lines, i, **style_opt)
+                txt_clip = ImageClip(np.array(txt_img)).set_duration(DEFAULT_LINE_DURATION)
+                
+                if bg_clip:
+                    bg_seg = bg_clip.subclip(0, DEFAULT_LINE_DURATION)
+                    bg_seg = bg_seg.fx(vfx.loop, duration=DEFAULT_LINE_DURATION)
+                    clips.append(CompositeVideoClip([bg_seg, txt_clip]).set_duration(DEFAULT_LINE_DURATION))
+                else:
+                    bg_base = Image.open(bg_img_path).convert("RGBA")
+                    bg_base = ImageOps.fit(bg_base, (VIDEO_WIDTH, VIDEO_HEIGHT), Image.Resampling.LANCZOS)
+                    final_scene = Image.alpha_composite(bg_base, txt_img)
+                    clips.append(ImageClip(np.array(final_scene)).set_duration(DEFAULT_LINE_DURATION))
 
-                    for i, line in enumerate(lines):
-                        if bg_video_path and video_base_clip:
-                            overlay_img = create_text_overlay(
-                                title,
-                                lines,
-                                i,
-                                **style_options,
-                                video_size=(VIDEO_WIDTH, VIDEO_HEIGHT),
-                            )
-                            overlay_clip = ImageClip(np.array(overlay_img)).set_duration(silent_line_duration)
-                            segment_bg = video_base_clip.fx(vfx.loop, duration=silent_line_duration)
-                            segment_clip = CompositeVideoClip([segment_bg, overlay_clip]).set_duration(silent_line_duration)
-                            clips.append(segment_clip)
-                        else:
-                            img = create_text_image(
-                                bg_path,
-                                title,
-                                lines,
-                                i,
-                                **style_options,
-                                video_size=(VIDEO_WIDTH, VIDEO_HEIGHT),
-                            )
-                            img_line_path = f"temp/line_{i}.png"
-                            img.save(img_line_path)
+            my_bar.progress(80, text="🎼 오디오 합성 및 인코딩 중...")
+            final_video = concatenate_videoclips(clips, method="compose")
 
-                            videoclip = ImageClip(img_line_path).set_duration(silent_line_duration)
-                            clips.append(videoclip)
+            audio_clip = None
+            if music_mode == "기본 음악" and os.path.exists(DEFAULT_MUSIC):
+                audio_clip = AudioFileClip(DEFAULT_MUSIC)
+            elif music_mode == "직접 업로드" and music_file:
+                with open("temp/temp_music.mp3", "wb") as f: f.write(music_file.getbuffer())
+                audio_clip = AudioFileClip("temp/temp_music.mp3")
+            
+            if audio_clip:
+                if audio_clip.duration < final_video.duration:
+                    audio_clip = audio_clip.loop(duration=final_video.duration)
+                else:
+                    audio_clip = audio_clip.subclip(0, final_video.duration)
+                final_video = final_video.set_audio(audio_clip.volumex(music_vol))
 
-                        progress.progress(20 + int(60 * (i + 1) / len(lines)))
+            output_path = "output_shorts.mp4"
+            final_video.write_videofile(output_path, fps=24, codec="libx264", audio_codec="aac", logger=None)
+            
+            if bg_clip: bg_clip.close()
 
-                    status.info("3️⃣ 최종 렌더링 중...")
-                    final_video = concatenate_videoclips(clips, method="compose")
-
-                    # 배경음악 적용
-                    if music_mode != "음악 없음":
-                        if music_mode == "기본 음악 사용" and os.path.exists(DEFAULT_MUSIC):
-                            music_clip = AudioFileClip(DEFAULT_MUSIC)
-                        elif music_mode == "직접 업로드" and music_file:
-                            music_temp_path = "temp/bg_music.mp3"
-                            with open(music_temp_path, "wb") as f:
-                                f.write(music_file.getbuffer())
-                            music_clip = AudioFileClip(music_temp_path)
-                        else:
-                            music_clip = None
-
-                        if music_clip:
-                            # 길이 맞추기
-                            if music_clip.duration < final_video.duration:
-                                music_clip = music_clip.loop(duration=final_video.duration)
-                            else:
-                                music_clip = music_clip.subclip(0, final_video.duration)
-
-                            music_clip = music_clip.volumex(music_volume)
-                            final_video = final_video.set_audio(music_clip)
-
-                    output_file = "output_shorts.mp4"
-                    final_video.write_videofile(output_file, fps=24, codec="libx264", audio_codec="aac")
-
-                    if video_base_clip:
-                        video_base_clip.close()
-
-                    progress.progress(100)
-                    status.success("🎉 영상 생성 완료!")
-                    _, video_col, _ = st.columns([1, 2, 1])
-                    with video_col:
-                        st.video(output_file, start_time=0)
-
-                    with open(output_file, "rb") as file:
-                        st.download_button("📥 영상 다운로드", file, file_name="shorts.mp4")
-
-            except Exception as e:
-                progress.empty()
-                st.error(f"오류 발생: {e}")
+            my_bar.progress(100, text="✅ 영상 제작 완료!")
+            st.toast("✨ 영상 생성이 완료되었습니다! 아래 버튼으로 저장하세요.", icon="🎉")
+            
+            st.video(output_path)
+            
+            with open(output_path, "rb") as f:
+                st.download_button("📥 내 폰에 저장하기", f, file_name="shorts.mp4", type="primary")
+            
+        except Exception as e:
+            my_bar.empty()
+            st.error(f"에러 발생: {str(e)}")
