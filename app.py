@@ -95,7 +95,7 @@ def _load_video_background(video_path):
     return cropped
 
 # ==========================================
-# 2. 기능 함수 (AI 제거, 로직 단순화)
+# 2. 기능 함수
 # ==========================================
 
 def hex_to_rgba(hex_color, alpha=255):
@@ -110,14 +110,13 @@ def hex_to_rgba(hex_color, alpha=255):
 
 
 def load_font(path, size, fallback):
-    """폰트를 안전하게 로드"""
+    """폰트 로드"""
     try:
         return ImageFont.truetype(path, size)
     except Exception:
         return fallback
 
 def _wrap_title(draw, title_text, font, max_width):
-    """메인 스크립트와 동일하게 제목을 줄바꿈 (공백 단위, 없으면 글자 단위)"""
     lines = []
 
     if " " in title_text:
@@ -343,7 +342,7 @@ def create_text_image(
     overlay_darkness=140,
     brand_text=FOOTER_BRAND,
 ):
-    """이미지 위에 텍스트 합성 (main.py 렌더링 레이아웃과 유사하게 정렬)"""
+    """이미지 위에 텍스트 합성"""
     colors = colors or {}
     title_color = hex_to_rgba(colors.get("title", "#FFD600"))
     body_color = hex_to_rgba(colors.get("body", "#FFFFFF"))
