@@ -478,10 +478,6 @@ body_text = st.text_area("본문 (한 줄씩 작성해주세요, 줄바꿈 필�
 )
 st.markdown('</div>', unsafe_allow_html=True)
 
-
-# =========================================================================
-# (중요) 화면에서 요소를 숨기기 위해 빈 컨테이너(Placeholder) 3개를 미리 생성
-# =========================================================================
 bg_container = st.empty()     # 배경 선택 UI용
 style_container = st.empty()  # 스타일 및 음악 설정 UI용
 btn_container = st.empty()    # 생성 버튼 UI용
@@ -621,7 +617,7 @@ with style_container.container():
                 st.error(f"미리보기 생성 중 오류: {str(e)}")
 
 # ----------------------------------------------------
-# SECTION 5: 생성 버튼 (btn_container 안에 렌더링)
+# SECTION 5: 생성 버튼
 # ----------------------------------------------------
 with btn_container.container():
     clicked_id = st.button("🎬 영상 생성하기", use_container_width=True, disabled=IS_GEN, type="primary")
@@ -639,7 +635,6 @@ if clicked_id == "start_gen_btn":
     elif not body_text.strip():
         st.error("내용을 입력해주세요!")
     else:
-        # [핵심] 진행 중이므로 설정창과 버튼 숨기기
         bg_container.empty()
         style_container.empty()
         btn_container.empty()
