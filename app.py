@@ -623,64 +623,10 @@ with style_container.container():
 # ----------------------------------------------------
 # SECTION 5: 생성 버튼 (btn_container 안에 렌더링)
 # ----------------------------------------------------
-# ▼ 본인의 쿠팡 파트너스 링크를 입력하세요
-COUPANG_LINK = "https://www.coupang.com" 
-
-# 버튼 스타일
-btn_css = """
-<style>
-    .generate-btn {
-        display: block;
-        width: 100%;
-        padding: 16px;
-        background: linear-gradient(135deg, #4A00E0 0%, #8E2DE2 100%);
-        color: white;
-        text-align: center;
-        border-radius: 12px;
-        text-decoration: none;
-        font-weight: 700;
-        font-size: 1.2rem;
-        box-shadow: 0 4px 10px rgba(74, 0, 224, 0.3);
-        transition: all 0.2s ease-in-out;
-        border: none;
-        cursor: pointer;
-    }
-    .generate-btn.disabled {
-        pointer-events: none;
-        opacity: 0.6;
-        filter: grayscale(0.2);
-        box-shadow: none;
-    }
-    .generate-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 15px rgba(74, 0, 224, 0.4);
-        color: white;
-    }
-    .disclaimer {
-        font-size: 11px;
-        color: #999;
-        text-align: center;
-        margin-top: 8px;
-        font-weight: 300;
-    }
-</style>
-"""
-
-btn_state_class = "disabled" if IS_GEN else ""
-btn_html = f"""
-{btn_css}
-<div style="margin-top: 20px;">
-    <a href="{COUPANG_LINK}" target="_blank" id="start_gen_btn" class="generate-btn {btn_state_class}">
-        🛍️ 쿠팡 구경하고, 영상 무료로 만들기
-    </a>
-    <div class="disclaimer">
-        이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.
-    </div>
-</div>
-"""
-
 with btn_container.container():
-    clicked_id = None if IS_GEN else click_detector(btn_html)
+    clicked_id = st.button("🎬 영상 생성하기", use_container_width=True, disabled=IS_GEN, type="primary")
+    if clicked_id:
+        clicked_id = "start_gen_btn"
 
 # ==========================================
 # 실행 로직 (버튼 클릭 시 처리)
@@ -706,7 +652,7 @@ if clicked_id == "start_gen_btn":
             "music_vol": music_vol,
             "music_bytes": music_file.getbuffer().tobytes() if music_mode == "직접 업로드" and music_file else None,
         }
-        progress_text = "🎬 후원에 감사드립니다! 영상 제작을 시작합니다..."
+        progress_text = "🎬 영상 제작을 시작합니다..."
         my_bar = st.progress(0, text=progress_text)
         
         try:
