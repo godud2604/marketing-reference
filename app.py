@@ -18,7 +18,7 @@ if not hasattr(Image, "ANTIALIAS"):
 # ==========================================
 # 1. 설정 및 초기화
 # ==========================================
-st.set_page_config(page_title="30초 인생사 메이커", layout="wide")
+st.set_page_config(page_title="명언 메이커", layout="wide")
 
 # 경로/폰트 설정 (프로젝트 루트 기준)
 ROOT_DIR = os.path.abspath(os.path.dirname(__file__))
